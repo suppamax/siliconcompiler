@@ -2694,7 +2694,14 @@ class Chip:
                     if value is None:
                         value = 'ERR'
                     else:
-                        value = str(value)
+                        # TODO: figure out how we can write typed values into
+                        # dataframe and then control formatting through the
+                        # pandas options
+                        if isinstance(value, float):
+                            # round floats to 2 decimals
+                            value = f'{value:.2f}'
+                        else:
+                            value = str(value)
 
                     row.append(" " + value.center(colwidth))
             data.append(row)
