@@ -32,6 +32,7 @@ import platform
 import getpass
 import distro
 import netifaces
+import queue
 from pathlib import Path
 from timeit import default_timer as timer
 from siliconcompiler.client import *
@@ -2581,6 +2582,18 @@ class Chip:
                           self.logger.info(string.strip())
 
     ###########################################################################
+    def _find_closest_tool_inputs(self, flow, step, index):
+        tasks = set()
+        for in_step, in_index in self.get('flowgraph', flow, step, index, 'input'):
+            tool = self.get('flowgraph', flow, in_step, in_index, 'tool')
+            if tool not in self.builtin:
+                tasks.add((in_step, in_index))
+            else:
+                tasks.update(self._find_closest_tool_inputs(flow, in_step, in_index))
+        return tasks
+
+
+    ###########################################################################
     def summary(self, steplist=None, show_all_indices=False):
         '''
         Prints a summary of the compilation manifest.
@@ -2646,29 +2659,61 @@ class Chip:
         # Stepping through all steps/indices and printing out metrics
         data = []
 
+        taskset = set()
+        for step in steplist:
+            for index in self.getkeys('flowgraph', flow, step):
+                taskset.add((step, index))
+
+        if not show_all_indices:
+            # Logic for finding all "winning" tasks. These are tasks that are on
+            # a chain of tasks marked as 'selected' in the flowstatus schema
+            # from a root to a leaf.
+
+            # First, iterate over the tasks to generate a set of non-leaf tasks.
+            non_leaf_tasks = set()
+            for step, index in taskset:
+                # We use a helper function to skip over builtin inputs
+                for in_task in self._find_closest_tool_inputs(flow, step, index):
+                    if in_task in taskset:
+                        non_leaf_tasks.add(in_task)
+
+            # This lets us find all leaf tasks by elimination.
+            leaf_tasks = taskset.difference(non_leaf_tasks)
+
+            # Now, we run a search backwards from the leaf tasks until we find a
+            # root or tool task outside of the provided steplist. Each tool task
+            # we encounter along the way gets marked for display.
+            to_search = queue.Queue()
+            for leaf in leaf_tasks:
+                to_search.put(leaf)
+
+            selected_tasks = set(leaf_tasks)
+            while not to_search.empty():
+                step, index = to_search.get()
+                for in_task in self.get('flowstatus', step, index, 'select'):
+                    tool = self.get('flowgraph', flow, *in_task, 'tool')
+                    if tool in self.builtin:
+                        to_search.put(in_task)
+                    elif in_task in taskset:
+                        selected_tasks.ad(in_task)
+                        to_search.put(in_task)
+                    # don't do anything with tasks outside of steplist
+        else:
+            selected_tasks = taskset
+
         #Creating Header
         header = []
-        indices_to_show = {}
+        indices_to_show = {step: [] for step in steplist}
         colwidth = 8
-        for step in steplist:
-            if show_all_indices:
-                indices_to_show[step] = self.getkeys('flowgraph', flow, step)
-            else:
-                # Default for last step in list (could be tool or function)
-                indices_to_show[step] = ['0']
+        for step, index in selected_tasks:
+            indices_to_show[step].append(index)
 
-                # Find winning index
-                for index in self.getkeys('flowgraph', flow, step):
-                    stepindex = step + index
-                    for i in  self.getkeys('flowstatus'):
-                        for j in  self.getkeys('flowstatus',i):
-                            for in_step, in_index in self.get('flowstatus',i,j,'select'):
-                                if (in_step + in_index) == stepindex:
-                                    indices_to_show[step] = index
+        # TODO: ordering logic here implicitly assumes all indices for a given
+        # step are parallel in the flowgraph, but this assumption isn't enforced.
 
         # header for data frame
         for step in steplist:
-            for index in indices_to_show[step]:
+            for index in sorted(indices_to_show[step]):
                 header.append(f'{step}{index}'.center(colwidth))
 
         # figure out which metrics have non-zero weights
