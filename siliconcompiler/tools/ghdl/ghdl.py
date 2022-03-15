@@ -73,6 +73,7 @@ def runtime_options(chip):
     # Synthesize inputs and output Verilog netlist
     options.append('--synth')
     options.append('--std=08')
+    options.append('--no-formal')
     options.append('--out=verilog')
 
     # Add sources
