@@ -3480,9 +3480,10 @@ class Chip:
                     # live output in non-blocking way, so we can monitor the
                     # timeout. Based on https://stackoverflow.com/a/18422264.
                     cmd_start_time = time.time()
-                    proc = subprocess.Popen(cmdlist,
+                    proc = subprocess.Popen(cmdstr,
                                             stdout=log_writer,
-                                            stderr=subprocess.STDOUT)
+                                            stderr=subprocess.STDOUT,
+                                            shell=True)
                     while proc.poll() is None:
                         # Loop until process terminates
                         if not quiet:
@@ -4122,7 +4123,7 @@ class Chip:
         runtime_options = self.find_function(tool, 'runtime_options', 'tools')
         if runtime_options:
             for option in runtime_options(self):
-                cmdlist.extend(shlex.split(option, posix=is_posix))
+                cmdlist.extend(shlex.split(shlex.quote(option), posix=is_posix))
 
         envvars = {}
         for key in self.getkeys('env'):

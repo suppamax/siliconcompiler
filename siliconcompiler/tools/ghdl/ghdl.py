@@ -43,7 +43,7 @@ def setup(chip):
     index = chip.get('arg','index')
 
     chip.set('eda', tool, 'copy', 'false', clobber=clobber)
-    chip.set('eda', tool, 'exe', 'ghdl', clobber=clobber)
+    chip.set('eda', tool, 'exe', 'yosys', clobber=clobber)
     chip.set('eda', tool, 'vswitch', '--version', clobber=clobber)
     chip.set('eda', tool, 'version', '2.0.0-dev', clobber=clobber)
     chip.set('eda', tool, 'threads', step, index, '4', clobber=clobber)
@@ -71,10 +71,12 @@ def runtime_options(chip):
     options = []
 
     # Synthesize inputs and output Verilog netlist
-    options.append('--synth')
+    options.append('-m')
+    options.append('ghdl')
+    options.append('-p')
+    options.append('\'')
+    options.append('ghdl')
     options.append('--std=08')
-    options.append('--no-formal')
-    options.append('--out=verilog')
 
     # Add sources
     for value in chip.find_files('source'):
@@ -84,6 +86,10 @@ def runtime_options(chip):
     design = chip.get('design')
     options.append('-e')
     options.append(design)
+    options.append(';')
+    options.append('write_verilog')
+    options.append('outputs/' + design + '.v')
+    options.append('\'')
 
     return options
 
@@ -102,27 +108,6 @@ def parse_version(stdout):
 def post_process(chip):
     ''' Tool specific function to run after step execution
     '''
-
-    # Hack: since ghdl outputs netlist to stdout, we produce the Verilog output
-    # by copying the log.
-
-    design = chip.get('design')
-    step = chip.get('arg', 'step')
-    logname = f'{step}.log'
-    outname = os.path.join('outputs', f'{design}.v')
-
-    # Since the log will also contain warnings and stuff, iterate till we find
-    # the first Verilog module before copying things out.
-    # TODO: find a more robust solution!
-    with open(logname, 'r') as infile, \
-         open(outname, 'w') as outfile:
-
-        for line in infile:
-            if line.startswith('module'):
-                outfile.write(line)
-                break
-        for line in infile:
-            outfile.write(line)
 
     return 0
 
